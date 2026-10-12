@@ -6,9 +6,30 @@ web UI's internal `data.lua` endpoints, which change between FRITZ!OS releases.
 
 Status: early. Tested against a FRITZ!Box 7530 AX (FRITZ!OS 8.25, DSL).
 
-## Resources
+## Resources and data sources
 
 - `fritzbox_port_forward`: an IPv4 port forward on the active WAN connection.
+- `fritzbox_remote_access`: whether the FRITZ!Box UI is reachable from the internet.
+- `fritzbox_storage`: the box's own FTP (LAN and internet) and SMB sharing.
+- `data.fritzbox_port_forwards`: every port forward on the box, including
+  ones Terraform does not manage. Combine it with a `check` block to get a
+  warning on every plan when something else opened a port:
+
+```hcl
+check "no_unmanaged_port_forwards" {
+  data "fritzbox_port_forwards" "all" {}
+
+  assert {
+    condition     = length(setsubtract(data.fritzbox_port_forwards.all.port_forwards[*].id, [fritzbox_port_forward.https.id])) == 0
+    error_message = "Port forwards not managed by Terraform exist on the FRITZ!Box."
+  }
+}
+```
+
+`fritzbox_remote_access` and `fritzbox_storage` are settings that exist
+exactly once per box: creating or updating them applies the setting,
+destroying them only removes them from state and leaves the box unchanged.
+Import them with any ID.
 
 ```hcl
 provider "fritzbox" {}  # FRITZBOX_URL, FRITZBOX_USERNAME, FRITZBOX_PASSWORD
@@ -52,6 +73,9 @@ of overwriting it, because TR-064's `AddPortMapping` overwrites silently.
 - Which TR-064 services exist depends on model and firmware;
   `http://fritz.box:49000/tr64desc.xml` lists them without authentication.
 - TR-064 has no IPv6 pinhole actions, so IPv6 firewall rules are out of scope.
+- Whether a device may open ports itself via UPnP is a per-device setting with
+  no TR-064 action; `data.fritzbox_port_forwards` detects the result instead.
+  Do not turn off `X_AVM-DE_UPnP`'s status transmission: TR-064 depends on it.
 
 ## Development
 

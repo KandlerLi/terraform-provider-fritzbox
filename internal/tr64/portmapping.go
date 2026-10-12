@@ -20,6 +20,7 @@ type PortMapping struct {
 	InternalPort   int
 	Enabled        bool
 	Description    string
+	LeaseDuration  int // seconds; 0 is permanent, anything else was typically opened by a device via UPnP
 }
 
 // ActiveWANService returns the WAN connection service that answers port mapping calls; inactive ones fail with 402.
@@ -49,10 +50,41 @@ func (c *Client) GetPortMapping(ctx context.Context, wan, protocol string, exter
 	if err != nil {
 		return nil, err
 	}
+	return parsePortMapping(protocol, externalPort, out)
+}
+
+// ListPortMappings returns every mapping on the WAN connection, including ones not created by Terraform.
+func (c *Client) ListPortMappings(ctx context.Context, wan string) ([]PortMapping, error) {
+	var mappings []PortMapping
+	// Iterate until 713/714 rather than trusting GetPortMappingNumberOfEntries, which the spec lets lag behind.
+	for i := 0; ; i++ {
+		out, err := c.Call(ctx, wan, "GetGenericPortMappingEntry", Arg{"NewPortMappingIndex", strconv.Itoa(i)})
+		var fault *Fault
+		if errors.As(err, &fault) && (fault.Code == 713 || fault.Code == 714) {
+			return mappings, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		externalPort, err := strconv.Atoi(out["NewExternalPort"])
+		if err != nil {
+			return nil, fmt.Errorf("entry %d NewExternalPort: %w", i, err)
+		}
+		m, err := parsePortMapping(out["NewProtocol"], externalPort, out)
+		if err != nil {
+			return nil, fmt.Errorf("entry %d: %w", i, err)
+		}
+		mappings = append(mappings, *m)
+	}
+}
+
+func parsePortMapping(protocol string, externalPort int, out map[string]string) (*PortMapping, error) {
 	internalPort, err := strconv.Atoi(out["NewInternalPort"])
 	if err != nil {
 		return nil, fmt.Errorf("NewInternalPort: %w", err)
 	}
+	// Informational only, so a missing value must not break reading the mapping.
+	lease, _ := strconv.Atoi(out["NewLeaseDuration"])
 	return &PortMapping{
 		Protocol:       protocol,
 		ExternalPort:   externalPort,
@@ -60,22 +92,19 @@ func (c *Client) GetPortMapping(ctx context.Context, wan, protocol string, exter
 		InternalPort:   internalPort,
 		Enabled:        out["NewEnabled"] == "1",
 		Description:    out["NewPortMappingDescription"],
+		LeaseDuration:  lease,
 	}, nil
 }
 
 // SetPortMapping creates the mapping, or overwrites the one with the same protocol/externalPort.
 func (c *Client) SetPortMapping(ctx context.Context, wan string, m PortMapping) error {
-	enabled := "0"
-	if m.Enabled {
-		enabled = "1"
-	}
 	_, err := c.Call(ctx, wan, "AddPortMapping",
 		Arg{"NewRemoteHost", ""},
 		Arg{"NewExternalPort", strconv.Itoa(m.ExternalPort)},
 		Arg{"NewProtocol", m.Protocol},
 		Arg{"NewInternalPort", strconv.Itoa(m.InternalPort)},
 		Arg{"NewInternalClient", m.InternalClient},
-		Arg{"NewEnabled", enabled},
+		Arg{"NewEnabled", boolArg(m.Enabled)},
 		Arg{"NewPortMappingDescription", m.Description},
 		Arg{"NewLeaseDuration", "0"},
 	)
