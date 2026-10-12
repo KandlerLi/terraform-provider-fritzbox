@@ -11,6 +11,7 @@ Status: early. Tested against a FRITZ!Box 7530 AX (FRITZ!OS 8.25, DSL).
 - `fritzbox_port_forward`: an IPv4 port forward on the active WAN connection.
 - `fritzbox_remote_access`: whether the FRITZ!Box UI is reachable from the internet.
 - `fritzbox_storage`: the box's own FTP (LAN and internet) and SMB sharing.
+- `fritzbox_dynamic_dns`: the box's DynDNS client, with write-only credentials.
 - `data.fritzbox_port_forwards`: every port forward on the box, including
   ones Terraform does not manage (see below).
 
@@ -59,6 +60,35 @@ destroying them only removes them from state and leaves the box unchanged.
 Import them with any ID. Every attribute defaults to the FRITZ!OS factory
 setting (as observed on a 7530 AX with FRITZ!OS 8.25), so a config only lists
 deviations; an empty block enforces the factory state.
+
+### DynDNS credentials
+
+`fritzbox_dynamic_dns` takes `username_wo`/`password_wo` as write-only
+attributes (Terraform 1.11+), so they never reach state or plan output. The
+box's `SetDDNSConfig` always overwrites the stored password, so every change
+to this resource needs them; bump `credentials_wo_version` to push rotated
+credentials when nothing else changed. Feed them from an ephemeral resource,
+for example:
+
+```hcl
+ephemeral "aws_secretsmanager_secret_version" "ddns" {
+  secret_id = "dyndns/fritzbox"
+}
+
+resource "fritzbox_dynamic_dns" "this" {
+  enabled                = true
+  provider_name          = "userdefined"
+  update_url             = "https://<username>:<pass>@ddns.example.com/nic/update?hostname=<domain>&myip=<ipaddr>"
+  domain                 = "example.com"
+  mode                   = "ddns_v4"
+  username_wo            = jsondecode(ephemeral.aws_secretsmanager_secret_version.ddns.secret_string).username
+  password_wo            = jsondecode(ephemeral.aws_secretsmanager_secret_version.ddns.secret_string).password
+  credentials_wo_version = 1
+}
+```
+
+Importing works without credentials as long as the config matches the box and
+`credentials_wo_version` is unset.
 
 ## FRITZ!Box setup
 

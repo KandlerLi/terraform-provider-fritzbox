@@ -28,6 +28,7 @@ type fakeFritzBox struct {
 	mu       sync.Mutex
 	mappings map[string]map[string]string // "TCP/443" -> output args
 	settings map[string]map[string]string // service type -> GetInfo output args
+	ddns     map[string]string            // SetDDNSConfig args, including NewPassword
 }
 
 func newFakeFritzBox(t *testing.T) (*fakeFritzBox, string) {
@@ -37,6 +38,7 @@ func newFakeFritzBox(t *testing.T) (*fakeFritzBox, string) {
 			remoteService:  {"NewEnabled": "0", "NewPort": "44443"},
 			storageService: {"NewFTPEnable": "1", "NewFTPWANEnable": "0", "NewFTPWANSSLOnly": "1", "NewSMBEnable": "1"},
 		},
+		ddns: map[string]string{"NewEnabled": "0", "NewMode": "ddns_v4"},
 	}
 	srv := httptest.NewServer(box)
 	t.Cleanup(srv.Close)
@@ -95,6 +97,21 @@ func (f *fakeFritzBox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	switch action {
+	case "GetDDNSInfo":
+		out := map[string]string{"NewStatusIPv4": "updated"}
+		for k, v := range f.ddns {
+			if k != "NewPassword" {
+				out[k] = v
+			}
+		}
+		respond(w, service, action, out)
+		return
+	case "SetDDNSConfig":
+		f.ddns = args
+		respond(w, service, action, nil)
+		return
+	}
 	if settings, ok := f.settings[service]; ok {
 		switch {
 		case action == "GetInfo":
