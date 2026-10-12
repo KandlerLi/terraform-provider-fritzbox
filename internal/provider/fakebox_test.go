@@ -20,6 +20,10 @@ const (
 	remoteService  = "urn:dslforum-org:service:X_AVM-DE_RemoteAccess:1"
 	storageService = "urn:dslforum-org:service:X_AVM-DE_Storage:1"
 	hostsService   = "urn:dslforum-org:service:Hosts:1"
+	wlan1Service   = "urn:dslforum-org:service:WLANConfiguration:1"
+	wlan3Service   = "urn:dslforum-org:service:WLANConfiguration:3"
+	filterService  = "urn:dslforum-org:service:X_AVM-DE_HostFilter:1"
+	infoService    = "urn:dslforum-org:service:DeviceInfo:1"
 )
 
 // fakeFritzBox mimics a DSL box: port mappings live on WANPPPConnection, WANIPConnection answers 402.
@@ -31,6 +35,8 @@ type fakeFritzBox struct {
 	settings map[string]map[string]string // service type -> GetInfo output args
 	ddns     map[string]string            // SetDDNSConfig args, including NewPassword
 	hosts    map[string]map[string]string // MAC -> GetSpecificHostEntry output args
+	blocked  map[string]bool              // IPv4 -> internet access blocked
+	calls    map[string]int               // action -> number of calls
 }
 
 func newFakeFritzBox(t *testing.T) (*fakeFritzBox, string) {
@@ -39,8 +45,16 @@ func newFakeFritzBox(t *testing.T) (*fakeFritzBox, string) {
 		settings: map[string]map[string]string{
 			remoteService:  {"NewEnabled": "0", "NewPort": "44443"},
 			storageService: {"NewFTPEnable": "1", "NewFTPWANEnable": "0", "NewFTPWANSSLOnly": "1", "NewSMBEnable": "1"},
+			wlan1Service: {"NewEnable": "1", "NewSSID": "FRITZ!Box 7530 AX", "NewBeaconType": "11i", "NewBeaconAdvertisementEnabled": "1",
+				"NewX_AVM-DE_FrequencyBand": "2400", "NewX_AVM-DE_APType": "normal"},
+			wlan3Service: {"NewEnable": "0", "NewSSID": "FRITZ!Box Gastzugang", "NewBeaconType": "11i", "NewBeaconAdvertisementEnabled": "1",
+				"NewX_AVM-DE_FrequencyBand": "2400", "NewX_AVM-DE_APType": "guest"},
+			infoService: {"NewManufacturerName": "AVM", "NewModelName": "FRITZ!Box 7530 AX", "NewSoftwareVersion": "256.08.25",
+				"NewHardwareVersion": "FRITZ!Box 7530 AX", "NewUpTime": "3600", "NewSerialNumber": "should-not-leak"},
 		},
-		ddns: map[string]string{"NewEnabled": "0", "NewMode": "ddns_v4"},
+		blocked: map[string]bool{},
+		calls:   map[string]int{},
+		ddns:    map[string]string{"NewEnabled": "0", "NewMode": "ddns_v4"},
 		hosts: map[string]map[string]string{
 			"AA:BB:CC:DD:EE:01": {"NewIPAddress": "192.168.178.100", "NewHostName": "PC-192-168-178-100", "NewActive": "1"},
 		},
@@ -60,6 +74,12 @@ var testProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
 	"fritzbox": providerserver.NewProtocol6WithError(New("test")()),
 }
 
+func (f *fakeFritzBox) callCount(action string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls[action]
+}
+
 func (f *fakeFritzBox) get(service, field string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -69,7 +89,7 @@ func (f *fakeFritzBox) get(service, field string) string {
 func (f *fakeFritzBox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/tr64desc.xml" {
 		fmt.Fprint(w, `<root><device><deviceList><device><deviceList><device><serviceList>`)
-		for _, s := range []string{pppService, ipService, remoteService, storageService, hostsService} {
+		for _, s := range []string{pppService, ipService, remoteService, storageService, hostsService, wlan1Service, wlan3Service, filterService, infoService} {
 			fmt.Fprintf(w, `<service><serviceType>%s</serviceType><controlURL>/upnp/control/%s</controlURL></service>`, s, strings.ToLower(s[strings.LastIndex(s, "service:")+8:]))
 		}
 		fmt.Fprint(w, `</serviceList></device></deviceList></device></deviceList></device></root>`)
@@ -102,6 +122,7 @@ func (f *fakeFritzBox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.calls[action]++
 	switch action {
 	case "GetDDNSInfo":
 		out := map[string]string{"NewStatusIPv4": "updated"}
@@ -115,6 +136,34 @@ func (f *fakeFritzBox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "SetDDNSConfig":
 		f.ddns = args
 		respond(w, service, action, nil)
+		return
+	case "GetWANAccessByIP":
+		respond(w, service, action, map[string]string{"NewDisallow": boolArgFake(f.blocked[args["NewIPv4Address"]])})
+		return
+	case "DisallowWANAccessByIP":
+		f.blocked[args["NewIPv4Address"]] = args["NewDisallow"] == "1"
+		respond(w, service, action, nil)
+		return
+	case "GetExternalIPAddress":
+		respond(w, service, action, map[string]string{"NewExternalIPAddress": "203.0.113.7"})
+		return
+	case "GetGenericHostEntry":
+		macs := make([]string, 0, len(f.hosts))
+		for m := range f.hosts {
+			macs = append(macs, m)
+		}
+		sort.Strings(macs)
+		var i int
+		fmt.Sscan(args["NewIndex"], &i)
+		if i >= len(macs) {
+			fault(w, 713, "SpecifiedArrayIndexInvalid")
+			return
+		}
+		out := map[string]string{"NewMACAddress": macs[i], "NewInterfaceType": "Ethernet", "NewAddressSource": "DHCP"}
+		for k, v := range f.hosts[macs[i]] {
+			out[k] = v
+		}
+		respond(w, service, action, out)
 		return
 	case "GetSpecificHostEntry", "X_AVM-DE_SetHostNameByMACAddress":
 		h, ok := f.hosts[args["NewMACAddress"]]
@@ -132,7 +181,7 @@ func (f *fakeFritzBox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if settings, ok := f.settings[service]; ok {
 		switch {
-		case action == "GetInfo":
+		case strings.HasPrefix(action, "Get") || strings.HasPrefix(action, "X_AVM-DE_Get"):
 			respond(w, service, action, settings)
 		case strings.HasPrefix(action, "Set"):
 			for k, v := range args {
@@ -208,4 +257,11 @@ func respond(w http.ResponseWriter, service, action string, out map[string]strin
 func fault(w http.ResponseWriter, code int, desc string) {
 	w.WriteHeader(http.StatusInternalServerError)
 	fmt.Fprintf(w, `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><detail><UPnPError><errorCode>%d</errorCode><errorDescription>%s</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>`, code, desc)
+}
+
+func boolArgFake(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
 }

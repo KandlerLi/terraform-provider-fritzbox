@@ -13,6 +13,10 @@ Status: early. Tested against a FRITZ!Box 7530 AX (FRITZ!OS 8.25, DSL).
 - `fritzbox_storage`: the box's own FTP (LAN and internet) and SMB sharing.
 - `fritzbox_dynamic_dns`: the box's DynDNS client, with write-only credentials.
 - `fritzbox_host_name`: the name of a device the box knows, by MAC address.
+- `fritzbox_wlan`: one WLAN (2.4 GHz, 5 GHz, guest) with a write-only passphrase.
+- `fritzbox_wan_access_block`: blocks internet access for one LAN IPv4 address.
+- `data.fritzbox_device_info`: model, FRITZ!OS version, uptime, external IPv4.
+- `data.fritzbox_hosts`: every device the box knows, e.g. to look up MAC addresses.
 - `data.fritzbox_port_forwards`: every port forward on the box, including
   ones Terraform does not manage (see below).
 
@@ -90,6 +94,11 @@ resource "fritzbox_dynamic_dns" "this" {
 
 Importing works without credentials as long as the config matches the box and
 `credentials_wo_version` is unset.
+
+`fritzbox_wlan` works the same way with `passphrase_wo`/`passphrase_wo_version`,
+except that each WLAN setting has its own TR-064 setter: the passphrase is only
+sent on create and when its version changes. The provider never calls
+`GetSecurityKeys`, so the passphrase cannot reach state through a read either.
 
 ## FRITZ!Box setup
 
