@@ -28,6 +28,10 @@ Existing forwards are imported as `<PROTOCOL>/<external_port>`:
 terraform import fritzbox_port_forward.https TCP/443
 ```
 
+With `import` blocks and `terraform plan -generate-config-out`, set
+`provider = fritzbox` in each block; otherwise Terraform looks for
+`hashicorp/fritzbox` when generating config.
+
 Creating a forward whose protocol/port already exists on the box fails instead
 of overwriting it, because TR-064's `AddPortMapping` overwrites silently.
 
