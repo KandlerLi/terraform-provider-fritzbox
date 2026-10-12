@@ -12,24 +12,7 @@ Status: early. Tested against a FRITZ!Box 7530 AX (FRITZ!OS 8.25, DSL).
 - `fritzbox_remote_access`: whether the FRITZ!Box UI is reachable from the internet.
 - `fritzbox_storage`: the box's own FTP (LAN and internet) and SMB sharing.
 - `data.fritzbox_port_forwards`: every port forward on the box, including
-  ones Terraform does not manage. Combine it with a `check` block to get a
-  warning on every plan when something else opened a port:
-
-```hcl
-check "no_unmanaged_port_forwards" {
-  data "fritzbox_port_forwards" "all" {}
-
-  assert {
-    condition     = length(setsubtract(data.fritzbox_port_forwards.all.port_forwards[*].id, [fritzbox_port_forward.https.id])) == 0
-    error_message = "Port forwards not managed by Terraform exist on the FRITZ!Box."
-  }
-}
-```
-
-`fritzbox_remote_access` and `fritzbox_storage` are settings that exist
-exactly once per box: creating or updating them applies the setting,
-destroying them only removes them from state and leaves the box unchanged.
-Import them with any ID.
+  ones Terraform does not manage (see below).
 
 ```hcl
 provider "fritzbox" {}  # FRITZBOX_URL, FRITZBOX_USERNAME, FRITZBOX_PASSWORD
@@ -55,6 +38,25 @@ With `import` blocks and `terraform plan -generate-config-out`, set
 
 Creating a forward whose protocol/port already exists on the box fails instead
 of overwriting it, because TR-064's `AddPortMapping` overwrites silently.
+
+Combine `data.fritzbox_port_forwards` with a `check` block to get a warning
+on every plan when something else opened a port:
+
+```hcl
+check "no_unmanaged_port_forwards" {
+  data "fritzbox_port_forwards" "all" {}
+
+  assert {
+    condition     = length(setsubtract(data.fritzbox_port_forwards.all.port_forwards[*].id, [fritzbox_port_forward.https.id])) == 0
+    error_message = "Port forwards not managed by Terraform exist on the FRITZ!Box."
+  }
+}
+```
+
+`fritzbox_remote_access` and `fritzbox_storage` are settings that exist
+exactly once per box: creating or updating them applies the setting,
+destroying them only removes them from state and leaves the box unchanged.
+Import them with any ID.
 
 ## FRITZ!Box setup
 
