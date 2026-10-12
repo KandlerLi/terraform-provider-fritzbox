@@ -19,6 +19,7 @@ const (
 	ipService      = "urn:dslforum-org:service:WANIPConnection:1"
 	remoteService  = "urn:dslforum-org:service:X_AVM-DE_RemoteAccess:1"
 	storageService = "urn:dslforum-org:service:X_AVM-DE_Storage:1"
+	hostsService   = "urn:dslforum-org:service:Hosts:1"
 )
 
 // fakeFritzBox mimics a DSL box: port mappings live on WANPPPConnection, WANIPConnection answers 402.
@@ -29,6 +30,7 @@ type fakeFritzBox struct {
 	mappings map[string]map[string]string // "TCP/443" -> output args
 	settings map[string]map[string]string // service type -> GetInfo output args
 	ddns     map[string]string            // SetDDNSConfig args, including NewPassword
+	hosts    map[string]map[string]string // MAC -> GetSpecificHostEntry output args
 }
 
 func newFakeFritzBox(t *testing.T) (*fakeFritzBox, string) {
@@ -39,6 +41,9 @@ func newFakeFritzBox(t *testing.T) (*fakeFritzBox, string) {
 			storageService: {"NewFTPEnable": "1", "NewFTPWANEnable": "0", "NewFTPWANSSLOnly": "1", "NewSMBEnable": "1"},
 		},
 		ddns: map[string]string{"NewEnabled": "0", "NewMode": "ddns_v4"},
+		hosts: map[string]map[string]string{
+			"AA:BB:CC:DD:EE:01": {"NewIPAddress": "192.168.178.100", "NewHostName": "PC-192-168-178-100", "NewActive": "1"},
+		},
 	}
 	srv := httptest.NewServer(box)
 	t.Cleanup(srv.Close)
@@ -64,7 +69,7 @@ func (f *fakeFritzBox) get(service, field string) string {
 func (f *fakeFritzBox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/tr64desc.xml" {
 		fmt.Fprint(w, `<root><device><deviceList><device><deviceList><device><serviceList>`)
-		for _, s := range []string{pppService, ipService, remoteService, storageService} {
+		for _, s := range []string{pppService, ipService, remoteService, storageService, hostsService} {
 			fmt.Fprintf(w, `<service><serviceType>%s</serviceType><controlURL>/upnp/control/%s</controlURL></service>`, s, strings.ToLower(s[strings.LastIndex(s, "service:")+8:]))
 		}
 		fmt.Fprint(w, `</serviceList></device></deviceList></device></deviceList></device></root>`)
@@ -110,6 +115,19 @@ func (f *fakeFritzBox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "SetDDNSConfig":
 		f.ddns = args
 		respond(w, service, action, nil)
+		return
+	case "GetSpecificHostEntry", "X_AVM-DE_SetHostNameByMACAddress":
+		h, ok := f.hosts[args["NewMACAddress"]]
+		if !ok {
+			fault(w, 714, "NoSuchEntryInArray")
+			return
+		}
+		if action == "GetSpecificHostEntry" {
+			respond(w, service, action, h)
+		} else {
+			h["NewHostName"] = args["NewHostName"]
+			respond(w, service, action, nil)
+		}
 		return
 	}
 	if settings, ok := f.settings[service]; ok {

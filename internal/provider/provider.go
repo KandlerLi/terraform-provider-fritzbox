@@ -92,7 +92,7 @@ func (p *fritzboxProvider) Configure(ctx context.Context, req provider.Configure
 }
 
 func (p *fritzboxProvider) Resources(context.Context) []func() resource.Resource {
-	return []func() resource.Resource{newPortForwardResource, newRemoteAccessResource, newStorageResource, newDynamicDNSResource}
+	return []func() resource.Resource{newPortForwardResource, newRemoteAccessResource, newStorageResource, newDynamicDNSResource, newHostNameResource}
 }
 
 func (p *fritzboxProvider) DataSources(context.Context) []func() datasource.DataSource {

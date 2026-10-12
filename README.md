@@ -12,6 +12,7 @@ Status: early. Tested against a FRITZ!Box 7530 AX (FRITZ!OS 8.25, DSL).
 - `fritzbox_remote_access`: whether the FRITZ!Box UI is reachable from the internet.
 - `fritzbox_storage`: the box's own FTP (LAN and internet) and SMB sharing.
 - `fritzbox_dynamic_dns`: the box's DynDNS client, with write-only credentials.
+- `fritzbox_host_name`: the name of a device the box knows, by MAC address.
 - `data.fritzbox_port_forwards`: every port forward on the box, including
   ones Terraform does not manage (see below).
 
