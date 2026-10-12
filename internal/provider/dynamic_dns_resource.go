@@ -50,7 +50,7 @@ func (r *dynamicDNSResource) Schema(_ context.Context, _ resource.SchemaRequest,
 		Attributes: map[string]schema.Attribute{
 			"id":            settingsID("dynamic_dns"),
 			"enabled":       schema.BoolAttribute{Required: true},
-			"provider_name": schema.StringAttribute{Required: true, Description: "As listed by the box's DynDNS provider dropdown, or `userdefined`."},
+			"provider_name": schema.StringAttribute{Required: true, Description: "The provider name as the box UI shows it, in the UI language (e.g. `Benutzerdefiniert` for a custom provider on German firmware)."},
 			"update_url":    schema.StringAttribute{Required: true, Description: "Update URL with the box's `<username>`, `<pass>`, `<domain>`, `<ipaddr>` placeholders."},
 			"domain":        schema.StringAttribute{Required: true},
 			"mode": schema.StringAttribute{

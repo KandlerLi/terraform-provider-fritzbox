@@ -77,7 +77,7 @@ ephemeral "aws_secretsmanager_secret_version" "ddns" {
 
 resource "fritzbox_dynamic_dns" "this" {
   enabled                = true
-  provider_name          = "userdefined"
+  provider_name          = "Benutzerdefiniert" # localized: as the box UI shows it
   update_url             = "https://<username>:<pass>@ddns.example.com/nic/update?hostname=<domain>&myip=<ipaddr>"
   domain                 = "example.com"
   mode                   = "ddns_v4"
