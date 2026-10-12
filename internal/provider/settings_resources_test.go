@@ -56,6 +56,16 @@ func TestStorage(t *testing.T) {
 		ProtoV6ProviderFactories: testProviderFactories,
 		Steps: []resource.TestStep{
 			{
+				// The fake starts with SMB and SSL-only on, both off by default.
+				Config: providerConfig + `resource "fritzbox_storage" "this" {}`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("fritzbox_storage.this", "ftp_enabled", "true"),
+					onBoxSetting(box, storageService, "NewFTPEnable", "1"),
+					onBoxSetting(box, storageService, "NewFTPWANSSLOnly", "0"),
+					onBoxSetting(box, storageService, "NewSMBEnable", "0"),
+				),
+			},
+			{
 				Config: providerConfig + `
 resource "fritzbox_storage" "this" {
   ftp_enabled      = false

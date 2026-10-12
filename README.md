@@ -56,7 +56,9 @@ check "no_unmanaged_port_forwards" {
 `fritzbox_remote_access` and `fritzbox_storage` are settings that exist
 exactly once per box: creating or updating them applies the setting,
 destroying them only removes them from state and leaves the box unchanged.
-Import them with any ID.
+Import them with any ID. Every attribute defaults to the FRITZ!OS factory
+setting (as observed on a 7530 AX with FRITZ!OS 8.25), so a config only lists
+deviations; an empty block enforces the factory state.
 
 ## FRITZ!Box setup
 

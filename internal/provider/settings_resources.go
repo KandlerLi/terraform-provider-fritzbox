@@ -2,10 +2,12 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -17,6 +19,16 @@ import (
 // Settings exist exactly once per box, so create/update both just apply them and
 // destroy only drops them from state: there is no "absent" setting to go back to.
 const settingsDestroyNote = " Destroying this resource leaves the setting on the box unchanged."
+
+// settingBool defaults to the factory value observed on a 7530 AX with FRITZ!OS 8.25, so configs list only deviations.
+func settingBool(description string, factoryDefault bool) schema.BoolAttribute {
+	return schema.BoolAttribute{
+		Optional:    true,
+		Computed:    true,
+		Default:     booldefault.StaticBool(factoryDefault),
+		Description: fmt.Sprintf("%s Defaults to `%t`, the FRITZ!OS factory setting.", description, factoryDefault),
+	}
+}
 
 func settingsID(id string) schema.StringAttribute {
 	return schema.StringAttribute{
@@ -47,7 +59,7 @@ func (r *remoteAccessResource) Schema(_ context.Context, _ resource.SchemaReques
 		Description: "Whether the FRITZ!Box UI is reachable from the internet (Internet → Permit Access → FRITZ!Box Services)." + settingsDestroyNote,
 		Attributes: map[string]schema.Attribute{
 			"id":      settingsID("remote_access"),
-			"enabled": schema.BoolAttribute{Required: true},
+			"enabled": settingBool("Whether the UI is reachable from the internet.", false),
 			"port": schema.Int64Attribute{
 				Computed:      true,
 				Description:   "HTTPS port of the remote UI, as configured on the box.",
@@ -149,10 +161,10 @@ func (r *storageResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 		Description: "The FRITZ!Box's own NAS sharing (Home Network → USB / Storage)." + settingsDestroyNote,
 		Attributes: map[string]schema.Attribute{
 			"id":               settingsID("storage"),
-			"ftp_enabled":      schema.BoolAttribute{Required: true, Description: "FTP access from the LAN."},
-			"ftp_wan_enabled":  schema.BoolAttribute{Required: true, Description: "FTP access from the internet."},
-			"ftp_wan_ssl_only": schema.BoolAttribute{Required: true, Description: "Require TLS for FTP from the internet."},
-			"smb_enabled":      schema.BoolAttribute{Required: true, Description: "SMB (Windows file sharing) in the LAN."},
+			"ftp_enabled":      settingBool("FTP access from the LAN.", true),
+			"ftp_wan_enabled":  settingBool("FTP access from the internet.", false),
+			"ftp_wan_ssl_only": settingBool("Require TLS for FTP from the internet.", false),
+			"smb_enabled":      settingBool("SMB (Windows file sharing) in the LAN.", false),
 		},
 	}
 }
