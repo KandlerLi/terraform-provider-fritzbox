@@ -1,0 +1,29 @@
+name: Checks
+
+# GitHub-hosted: the provider needs no AWS, cluster or LAN access.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go test
+    runs-on: ubuntu-latest
+    # The official image instead of actions/setup-go, which repo-infra's Actions allowlist doesn't include.
+    container: golang:1.25.8-bookworm@sha256:4557cf171e3cdf5053a298d5171b1a5f5734d920260c25f22c79e94760eb2084
+    steps:
+      - name: Check out
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
