@@ -1,0 +1,7 @@
+# gitleaks false positive, confirmed 2026-10-26 (tracker #23).
+#
+# README.md:75 is the example ephemeral block's secret_id, the *name* of a
+# Secrets Manager container, not a secret value. History is never
+# rewritten here, so the fingerprint stays pinned to the commit that
+# introduced the line.
+5a1a525f6e0d02b7a7ce2f2da796e749ab39d99a:README.md:generic-api-key:75
