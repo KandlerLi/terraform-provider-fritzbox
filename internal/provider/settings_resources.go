@@ -244,3 +244,115 @@ func (r *storageResource) Delete(context.Context, resource.DeleteRequest, *resou
 func (r *storageResource) ImportState(ctx context.Context, _ resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), "storage")...)
 }
+
+// --- fritzbox_myfritz
+
+type myFritzResource struct{ fb *fritzbox }
+
+type myFritzModel struct {
+	ID               types.String `tfsdk:"id"`
+	Enabled          types.Bool   `tfsdk:"enabled"`
+	DeviceRegistered types.Bool   `tfsdk:"device_registered"`
+	State            types.String `tfsdk:"state"`
+	ServiceCount     types.Int64  `tfsdk:"service_count"`
+}
+
+func newMyFritzResource() resource.Resource { return &myFritzResource{} }
+
+func (r *myFritzResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_myfritz"
+}
+
+func (r *myFritzResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Description: "AVM's MyFRITZ! remote access (Internet → MyFRITZ! Account). The registered e-mail address is " +
+			"kept as is and never read into state." + settingsDestroyNote,
+		Attributes: map[string]schema.Attribute{
+			"id":      settingsID("myfritz"),
+			"enabled": settingBool("Whether MyFRITZ! is on.", false),
+			"device_registered": schema.BoolAttribute{
+				Computed:    true,
+				Description: "Whether the box is registered with a MyFRITZ! account.",
+			},
+			"state": schema.StringAttribute{
+				Computed:    true,
+				Description: "The box's own status string, e.g. `myfritz_disabled`.",
+			},
+			"service_count": schema.Int64Attribute{
+				Computed: true,
+				Description: "Number of devices published through MyFRITZ! (Internet → MyFRITZ! Account → " +
+					"Device Shares). Each one is reachable from the internet; a `check` block can require 0.",
+			},
+		},
+	}
+}
+
+func (r *myFritzResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
+	if req.ProviderData != nil {
+		r.fb = req.ProviderData.(*fritzbox)
+	}
+}
+
+func (r *myFritzResource) apply(ctx context.Context, plan myFritzModel) (myFritzModel, error) {
+	if err := r.fb.client.SetMyFritzEnabled(ctx, plan.Enabled.ValueBool()); err != nil {
+		return plan, err
+	}
+	return r.read(ctx)
+}
+
+func (r *myFritzResource) read(ctx context.Context) (myFritzModel, error) {
+	m, err := r.fb.client.GetMyFritz(ctx)
+	if err != nil {
+		return myFritzModel{}, err
+	}
+	return myFritzModel{
+		ID:               types.StringValue("myfritz"),
+		Enabled:          types.BoolValue(m.Enabled),
+		DeviceRegistered: types.BoolValue(m.DeviceRegistered),
+		State:            types.StringValue(m.State),
+		ServiceCount:     types.Int64Value(int64(m.Services)),
+	}, nil
+}
+
+func (r *myFritzResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan myFritzModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	state, err := r.apply(ctx, plan)
+	if err != nil {
+		resp.Diagnostics.AddError("Setting MyFRITZ! failed", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
+}
+
+func (r *myFritzResource) Read(ctx context.Context, _ resource.ReadRequest, resp *resource.ReadResponse) {
+	state, err := r.read(ctx)
+	if err != nil {
+		resp.Diagnostics.AddError("Reading MyFRITZ! failed", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
+}
+
+func (r *myFritzResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var plan myFritzModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	state, err := r.apply(ctx, plan)
+	if err != nil {
+		resp.Diagnostics.AddError("Setting MyFRITZ! failed", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
+}
+
+func (r *myFritzResource) Delete(context.Context, resource.DeleteRequest, *resource.DeleteResponse) {}
+
+func (r *myFritzResource) ImportState(ctx context.Context, _ resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), "myfritz")...)
+}

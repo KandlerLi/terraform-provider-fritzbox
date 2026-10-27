@@ -11,6 +11,7 @@ Status: early. Tested against a FRITZ!Box 7530 AX (FRITZ!OS 8.25, DSL).
 - `fritzbox_port_forward`: an IPv4 port forward on the active WAN connection.
 - `fritzbox_remote_access`: whether the FRITZ!Box UI is reachable from the internet.
 - `fritzbox_storage`: the box's own FTP (LAN and internet) and SMB sharing.
+- `fritzbox_myfritz`: whether MyFRITZ! is on, plus how many devices it publishes.
 - `fritzbox_dynamic_dns`: the box's DynDNS client, with write-only credentials.
 - `fritzbox_host_name`: the name of a device the box knows, by MAC address.
 - `fritzbox_wlan`: one WLAN (2.4 GHz, 5 GHz, guest) with a write-only passphrase.
@@ -59,7 +60,7 @@ check "no_unmanaged_port_forwards" {
 }
 ```
 
-`fritzbox_remote_access` and `fritzbox_storage` are settings that exist
+`fritzbox_remote_access`, `fritzbox_storage` and `fritzbox_myfritz` are settings that exist
 exactly once per box: creating or updating them applies the setting,
 destroying them only removes them from state and leaves the box unchanged.
 Import them with any ID. Every attribute defaults to the FRITZ!OS factory
