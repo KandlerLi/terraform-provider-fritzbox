@@ -8,6 +8,7 @@ import (
 const (
 	remoteAccessService = "urn:dslforum-org:service:X_AVM-DE_RemoteAccess:1"
 	storageService      = "urn:dslforum-org:service:X_AVM-DE_Storage:1"
+	myFritzService      = "urn:dslforum-org:service:X_AVM-DE_MyFritz:1"
 )
 
 // RemoteAccess is the FRITZ!Box UI's reachability from the internet.
@@ -63,6 +64,45 @@ func (c *Client) SetStorage(ctx context.Context, s Storage) error {
 		return err
 	}
 	_, err := c.Call(ctx, storageService, "SetSMBServer", Arg{"NewSMBEnable", boolArg(s.SMBEnabled)})
+	return err
+}
+
+// MyFritz is AVM's MyFRITZ! remote access. The registered e-mail address is deliberately not exposed.
+type MyFritz struct {
+	Enabled          bool
+	DeviceRegistered bool
+	State            string
+	Services         int // devices published through MyFRITZ!
+}
+
+func (c *Client) GetMyFritz(ctx context.Context) (*MyFritz, error) {
+	out, err := c.Call(ctx, myFritzService, "GetInfo")
+	if err != nil {
+		return nil, err
+	}
+	n, err := c.Call(ctx, myFritzService, "GetNumberOfServices")
+	if err != nil {
+		return nil, err
+	}
+	services, _ := strconv.Atoi(n["NewNumberOfServices"])
+	return &MyFritz{
+		Enabled:          out["NewEnabled"] == "1",
+		DeviceRegistered: out["NewDeviceRegistered"] == "1",
+		State:            out["NewState"],
+		Services:         services,
+	}, nil
+}
+
+// SetMyFritzEnabled passes the stored e-mail address back, since SetMyFRITZ requires one on every call.
+func (c *Client) SetMyFritzEnabled(ctx context.Context, enabled bool) error {
+	out, err := c.Call(ctx, myFritzService, "GetInfo")
+	if err != nil {
+		return err
+	}
+	_, err = c.Call(ctx, myFritzService, "SetMyFRITZ",
+		Arg{"NewEnabled", boolArg(enabled)},
+		Arg{"NewEmail", out["NewEmail"]},
+	)
 	return err
 }
 

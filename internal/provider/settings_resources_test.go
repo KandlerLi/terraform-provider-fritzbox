@@ -88,3 +88,31 @@ resource "fritzbox_storage" "this" {
 		CheckDestroy: onBoxSetting(box, storageService, "NewSMBEnable", "0"),
 	})
 }
+
+func TestMyFritz(t *testing.T) {
+	box, providerConfig := newFakeFritzBox(t)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// The fake starts registered and on, with one published device.
+				Config: providerConfig + `resource "fritzbox_myfritz" "this" {}`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("fritzbox_myfritz.this", "enabled", "false"),
+					resource.TestCheckResourceAttr("fritzbox_myfritz.this", "service_count", "1"),
+					resource.TestCheckNoResourceAttr("fritzbox_myfritz.this", "email"),
+					onBoxSetting(box, myFritzService, "NewEnabled", "0"),
+					// SetMyFRITZ needs the address; the provider passes the stored one back.
+					onBoxSetting(box, myFritzService, "NewEmail", "owner@example.org"),
+				),
+			},
+			{
+				ResourceName:      "fritzbox_myfritz.this",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+		CheckDestroy: onBoxSetting(box, myFritzService, "NewEnabled", "0"),
+	})
+}

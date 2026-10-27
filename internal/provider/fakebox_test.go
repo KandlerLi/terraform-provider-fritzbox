@@ -24,6 +24,7 @@ const (
 	wlan3Service   = "urn:dslforum-org:service:WLANConfiguration:3"
 	filterService  = "urn:dslforum-org:service:X_AVM-DE_HostFilter:1"
 	infoService    = "urn:dslforum-org:service:DeviceInfo:1"
+	myFritzService = "urn:dslforum-org:service:X_AVM-DE_MyFritz:1"
 )
 
 // fakeFritzBox mimics a DSL box: port mappings live on WANPPPConnection, WANIPConnection answers 402.
@@ -51,6 +52,8 @@ func newFakeFritzBox(t *testing.T) (*fakeFritzBox, string) {
 				"NewX_AVM-DE_FrequencyBand": "2400", "NewX_AVM-DE_APType": "guest"},
 			infoService: {"NewManufacturerName": "AVM", "NewModelName": "FRITZ!Box 7530 AX", "NewSoftwareVersion": "256.08.25",
 				"NewHardwareVersion": "FRITZ!Box 7530 AX", "NewUpTime": "3600", "NewSerialNumber": "should-not-leak"},
+			myFritzService: {"NewEnabled": "1", "NewDeviceRegistered": "1", "NewState": "myfritz_registered",
+				"NewEmail": "owner@example.org", "NewNumberOfServices": "1"},
 		},
 		blocked: map[string]bool{},
 		calls:   map[string]int{},
@@ -89,7 +92,7 @@ func (f *fakeFritzBox) get(service, field string) string {
 func (f *fakeFritzBox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/tr64desc.xml" {
 		fmt.Fprint(w, `<root><device><deviceList><device><deviceList><device><serviceList>`)
-		for _, s := range []string{pppService, ipService, remoteService, storageService, hostsService, wlan1Service, wlan3Service, filterService, infoService} {
+		for _, s := range []string{pppService, ipService, remoteService, storageService, hostsService, wlan1Service, wlan3Service, filterService, infoService, myFritzService} {
 			fmt.Fprintf(w, `<service><serviceType>%s</serviceType><controlURL>/upnp/control/%s</controlURL></service>`, s, strings.ToLower(s[strings.LastIndex(s, "service:")+8:]))
 		}
 		fmt.Fprint(w, `</serviceList></device></deviceList></device></deviceList></device></root>`)
