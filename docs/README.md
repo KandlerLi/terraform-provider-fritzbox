@@ -1,0 +1,141 @@
+# terraform-provider-fritzbox
+
+Terraform provider for AVM FRITZ!Box routers, built on the documented
+[TR-064 interface](https://fritz.com/service/schnittstellen/) rather than the
+web UI's internal `data.lua` endpoints, which change between FRITZ!OS releases.
+
+Status: early. Tested against a FRITZ!Box 7530 AX (FRITZ!OS 8.25, DSL).
+
+## Resources and data sources
+
+- `fritzbox_port_forward`: an IPv4 port forward on the active WAN connection.
+- `fritzbox_remote_access`: whether the FRITZ!Box UI is reachable from the internet.
+- `fritzbox_storage`: the box's own FTP (LAN and internet) and SMB sharing.
+- `fritzbox_myfritz`: whether MyFRITZ! is on, plus how many devices it publishes.
+- `fritzbox_dynamic_dns`: the box's DynDNS client, with write-only credentials.
+- `fritzbox_host_name`: the name of a device the box knows, by MAC address.
+- `fritzbox_wlan`: one WLAN (2.4 GHz, 5 GHz, guest) with a write-only passphrase.
+- `fritzbox_wan_access_block`: blocks internet access for one LAN IPv4 address.
+- `data.fritzbox_device_info`: model, FRITZ!OS version, uptime, external IPv4.
+- `data.fritzbox_hosts`: every device the box knows, e.g. to look up MAC addresses.
+- `data.fritzbox_port_forwards`: every port forward on the box, including
+  ones Terraform does not manage (see below).
+
+```hcl
+provider "fritzbox" {}  # FRITZBOX_URL, FRITZBOX_USERNAME, FRITZBOX_PASSWORD
+
+resource "fritzbox_port_forward" "https" {
+  protocol        = "TCP"
+  external_port   = 443
+  internal_client = "192.168.178.100"
+  internal_port   = 443
+  description     = "HTTPS"
+}
+```
+
+Existing forwards are imported as `<PROTOCOL>/<external_port>`:
+
+```sh
+terraform import fritzbox_port_forward.https TCP/443
+```
+
+With `import` blocks and `terraform plan -generate-config-out`, set
+`provider = fritzbox` in each block; otherwise Terraform looks for
+`hashicorp/fritzbox` when generating config.
+
+Creating a forward whose protocol/port already exists on the box fails instead
+of overwriting it, because TR-064's `AddPortMapping` overwrites silently.
+
+Combine `data.fritzbox_port_forwards` with a `check` block to get a warning
+on every plan when something else opened a port:
+
+```hcl
+check "no_unmanaged_port_forwards" {
+  data "fritzbox_port_forwards" "all" {}
+
+  assert {
+    condition     = length(setsubtract(data.fritzbox_port_forwards.all.port_forwards[*].id, [fritzbox_port_forward.https.id])) == 0
+    error_message = "Port forwards not managed by Terraform exist on the FRITZ!Box."
+  }
+}
+```
+
+`fritzbox_remote_access`, `fritzbox_storage` and `fritzbox_myfritz` are settings that exist
+exactly once per box: creating or updating them applies the setting,
+destroying them only removes them from state and leaves the box unchanged.
+Import them with any ID. Every attribute defaults to the FRITZ!OS factory
+setting (as observed on a 7530 AX with FRITZ!OS 8.25), so a config only lists
+deviations; an empty block enforces the factory state.
+
+### DynDNS credentials
+
+`fritzbox_dynamic_dns` takes `username_wo`/`password_wo` as write-only
+attributes (Terraform 1.11+), so they never reach state or plan output. The
+box's `SetDDNSConfig` always overwrites the stored password, so every change
+to this resource needs them; bump `credentials_wo_version` to push rotated
+credentials when nothing else changed. Feed them from an ephemeral resource,
+for example:
+
+```hcl
+ephemeral "aws_secretsmanager_secret_version" "ddns" {
+  secret_id = "dyndns/fritzbox" # gitleaks:allow
+}
+
+resource "fritzbox_dynamic_dns" "this" {
+  enabled                = true
+  provider_name          = "Benutzerdefiniert" # localized: as the box UI shows it
+  update_url             = "https://<username>:<pass>@ddns.example.com/nic/update?hostname=<domain>&myip=<ipaddr>"
+  domain                 = "example.com"
+  mode                   = "ddns_v4"
+  username_wo            = jsondecode(ephemeral.aws_secretsmanager_secret_version.ddns.secret_string).username
+  password_wo            = jsondecode(ephemeral.aws_secretsmanager_secret_version.ddns.secret_string).password
+  credentials_wo_version = 1
+}
+```
+
+Importing works without credentials as long as the config matches the box and
+`credentials_wo_version` is unset.
+
+`fritzbox_wlan` works the same way with `passphrase_wo`/`passphrase_wo_version`,
+except that each WLAN setting has its own TR-064 setter: the passphrase is only
+sent on create and when its version changes. The provider never calls
+`GetSecurityKeys`, so the passphrase cannot reach state through a read either.
+
+## FRITZ!Box setup
+
+- *Home Network → Network → Network Settings*: enable "Allow access for applications".
+- Use a dedicated FRITZ!Box user with the "FRITZ!Box Settings" permission.
+  Boxes that log in with a password only still have an auto-generated user
+  name (`fritzXXXX`); `http://fritz.box/login_sid.lua?version=2` lists it.
+
+## How it talks to the box
+
+- TR-064 is SOAP over HTTP digest auth on port 49000. The password is never
+  sent in clear text, but the rest of the traffic is; keep it inside the LAN.
+- DSL boxes carry port mappings on `WANPPPConnection`, cable/fiber boxes on
+  `WANIPConnection`. The provider uses whichever one answers; the inactive one
+  returns UPnP error 402.
+- Which TR-064 services exist depends on model and firmware;
+  `http://fritz.box:49000/tr64desc.xml` lists them without authentication.
+- TR-064 has no IPv6 pinhole actions, so IPv6 firewall rules are out of scope.
+- Whether a device may open ports itself via UPnP is a per-device setting with
+  no TR-064 action; `data.fritzbox_port_forwards` detects the result instead.
+  Do not turn off `X_AVM-DE_UPnP`'s status transmission: TR-064 depends on it.
+
+## Development
+
+```sh
+go test ./...   # includes a full Terraform run against a fake FRITZ!Box
+go install .
+```
+
+Use the local build via `~/.terraformrc`:
+
+```hcl
+provider_installation {
+  dev_overrides {
+    "KandlerLi/fritzbox" = "/home/<you>/go/bin"
+  }
+  direct {}
+}
+```
